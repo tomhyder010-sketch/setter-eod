@@ -14,3 +14,7 @@ export const daysAgoISO = (days: number) => {
 
 export const sumBy = <T,>(rows: T[], get: (row: T) => number | null | undefined) =>
   rows.reduce((acc, row) => acc + Number(get(row) ?? 0), 0);
+
+// month0 is 0-indexed (January = 0), matching Date's convention.
+export const daysInMonth = (year: number, month0: number) =>
+  new Date(year, month0 + 1, 0).getDate();

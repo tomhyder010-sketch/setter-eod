@@ -10,7 +10,14 @@ import {
   YAxis,
 } from "recharts";
 import { fetchAll, isConfigured } from "../../lib/api";
-import { daysAgoISO, fmtNum, pct, sumBy, todayISO } from "../../lib/metrics";
+import {
+  daysAgoISO,
+  daysInMonth,
+  fmtNum,
+  pct,
+  sumBy,
+  todayISO,
+} from "../../lib/metrics";
 import type { EodReport } from "../../lib/eodFields";
 import { DateRange, Kpi, Panel, Select } from "../../components/ui";
 
@@ -83,6 +90,61 @@ export default function Overview() {
         .sort((a, b) => a.report_date.localeCompare(b.report_date)),
     [allReports, from, to, setterName]
   );
+
+  // Full history for the selected setter, independent of the date-range
+  // picker above (which defaults to 14 days) — monthly projections need
+  // every report in a given calendar month, not just a recent slice.
+  const reportsForSetter = useMemo(
+    () =>
+      allReports.filter(
+        (r) => setterName === "all" || r.setter_name === setterName
+      ),
+    [allReports, setterName]
+  );
+
+  const bookedTotal = (r: EodReport) =>
+    Number(r.meetings_booked_dials ?? 0) +
+    Number(r.meetings_booked_email ?? 0) +
+    Number(r.meetings_booked_linkedin ?? 0) +
+    Number(r.misc_meetings_booked ?? 0);
+
+  const monthlyProjections = useMemo(() => {
+    const now = new Date();
+    const currentKey = `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}`;
+
+    const bookedByMonth = new Map<string, number>();
+    for (const r of reportsForSetter) {
+      const key = r.report_date.slice(0, 7);
+      bookedByMonth.set(key, (bookedByMonth.get(key) ?? 0) + bookedTotal(r));
+    }
+    // Always show the current month, even with zero reports yet.
+    if (!bookedByMonth.has(currentKey)) bookedByMonth.set(currentKey, 0);
+
+    return [...bookedByMonth.entries()]
+      .map(([key, bookedSoFar]) => {
+        const [year, month] = key.split("-").map(Number);
+        const totalDays = daysInMonth(year, month - 1);
+        const elapsedDays = key === currentKey ? now.getDate() : totalDays;
+        const dailyRate = elapsedDays > 0 ? bookedSoFar / elapsedDays : 0;
+        return {
+          key,
+          label: new Date(year, month - 1, 1).toLocaleDateString(undefined, {
+            month: "long",
+            year: "numeric",
+          }),
+          bookedSoFar,
+          elapsedDays,
+          totalDays,
+          dailyRate,
+          projected: Math.round(dailyRate * totalDays),
+          isCurrent: key === currentKey,
+        };
+      })
+      .sort((a, b) => b.key.localeCompare(a.key))
+      .slice(0, 6);
+  }, [reportsForSetter]);
 
   const totals = useMemo(() => {
     const sum = (key: string) => sumBy(reports, (r) => r[key] as number);
@@ -241,6 +303,62 @@ export default function Overview() {
               </div>
             ))}
           </div>
+        </Panel>
+      </div>
+
+      <div className="mt-6">
+        <Panel title="Projected bookings by month">
+          {monthlyProjections.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {loading ? "Loading…" : "No reports yet."}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="pb-2 pr-4 font-medium">Month</th>
+                    <th className="pb-2 pr-4 font-medium">Days elapsed</th>
+                    <th className="pb-2 pr-4 text-right font-medium">
+                      Booked so far
+                    </th>
+                    <th className="pb-2 pr-4 text-right font-medium">
+                      Daily rate
+                    </th>
+                    <th className="pb-2 text-right font-medium">
+                      Projected total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyProjections.map((m) => (
+                    <tr key={m.key} className="border-t border-border">
+                      <td className="py-2 pr-4 font-medium">
+                        {m.label}
+                        {m.isCurrent && (
+                          <span className="ml-2 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-normal text-primary">
+                            in progress
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4 text-muted-foreground">
+                        {m.elapsedDays} / {m.totalDays}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums">
+                        {fmtNum(m.bookedSoFar)}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-muted-foreground">
+                        {m.dailyRate.toFixed(1)}/day
+                      </td>
+                      <td className="py-2 text-right text-base font-semibold tabular-nums">
+                        {fmtNum(m.projected)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Panel>
       </div>
 
