@@ -9,17 +9,21 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchAll, isConfigured } from "../../lib/api";
 import {
   daysAgoISO,
   daysInMonth,
   fmtNum,
+  monthKey,
+  monthLabel,
   pct,
+  shiftMonthKey,
   sumBy,
   todayISO,
 } from "../../lib/metrics";
 import type { EodReport } from "../../lib/eodFields";
-import { DateRange, Kpi, Panel, Select } from "../../components/ui";
+import { Button, DateRange, Kpi, Panel, Select } from "../../components/ui";
 
 const CHANNELS = [
   {
@@ -108,43 +112,28 @@ export default function Overview() {
     Number(r.meetings_booked_linkedin ?? 0) +
     Number(r.misc_meetings_booked ?? 0);
 
-  const monthlyProjections = useMemo(() => {
-    const now = new Date();
-    const currentKey = `${now.getFullYear()}-${String(
-      now.getMonth() + 1
-    ).padStart(2, "0")}`;
+  const currentMonthKey = useMemo(() => monthKey(new Date()), []);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
 
-    const bookedByMonth = new Map<string, number>();
-    for (const r of reportsForSetter) {
-      const key = r.report_date.slice(0, 7);
-      bookedByMonth.set(key, (bookedByMonth.get(key) ?? 0) + bookedTotal(r));
-    }
-    // Always show the current month, even with zero reports yet.
-    if (!bookedByMonth.has(currentKey)) bookedByMonth.set(currentKey, 0);
-
-    return [...bookedByMonth.entries()]
-      .map(([key, bookedSoFar]) => {
-        const [year, month] = key.split("-").map(Number);
-        const totalDays = daysInMonth(year, month - 1);
-        const elapsedDays = key === currentKey ? now.getDate() : totalDays;
-        const dailyRate = elapsedDays > 0 ? bookedSoFar / elapsedDays : 0;
-        return {
-          key,
-          label: new Date(year, month - 1, 1).toLocaleDateString(undefined, {
-            month: "long",
-            year: "numeric",
-          }),
-          bookedSoFar,
-          elapsedDays,
-          totalDays,
-          dailyRate,
-          projected: Math.round(dailyRate * totalDays),
-          isCurrent: key === currentKey,
-        };
-      })
-      .sort((a, b) => b.key.localeCompare(a.key))
-      .slice(0, 6);
-  }, [reportsForSetter]);
+  const monthProjection = useMemo(() => {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    const totalDays = daysInMonth(year, month - 1);
+    const isCurrent = selectedMonth === currentMonthKey;
+    const bookedSoFar = sumBy(
+      reportsForSetter.filter((r) => r.report_date.slice(0, 7) === selectedMonth),
+      bookedTotal
+    );
+    const elapsedDays = isCurrent ? new Date().getDate() : totalDays;
+    const dailyRate = elapsedDays > 0 ? bookedSoFar / elapsedDays : 0;
+    return {
+      totalDays,
+      elapsedDays,
+      bookedSoFar,
+      dailyRate,
+      projected: Math.round(dailyRate * totalDays),
+      isCurrent,
+    };
+  }, [reportsForSetter, selectedMonth, currentMonthKey]);
 
   const totals = useMemo(() => {
     const sum = (key: string) => sumBy(reports, (r) => r[key] as number);
@@ -307,58 +296,72 @@ export default function Overview() {
       </div>
 
       <div className="mt-6">
-        <Panel title="Projected bookings by month">
-          {monthlyProjections.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              {loading ? "Loading…" : "No reports yet."}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="pb-2 pr-4 font-medium">Month</th>
-                    <th className="pb-2 pr-4 font-medium">Days elapsed</th>
-                    <th className="pb-2 pr-4 text-right font-medium">
-                      Booked so far
-                    </th>
-                    <th className="pb-2 pr-4 text-right font-medium">
-                      Daily rate
-                    </th>
-                    <th className="pb-2 text-right font-medium">
-                      Projected total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyProjections.map((m) => (
-                    <tr key={m.key} className="border-t border-border">
-                      <td className="py-2 pr-4 font-medium">
-                        {m.label}
-                        {m.isCurrent && (
-                          <span className="ml-2 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-normal text-primary">
-                            in progress
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4 text-muted-foreground">
-                        {m.elapsedDays} / {m.totalDays}
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums">
-                        {fmtNum(m.bookedSoFar)}
-                      </td>
-                      <td className="py-2 pr-4 text-right tabular-nums text-muted-foreground">
-                        {m.dailyRate.toFixed(1)}/day
-                      </td>
-                      <td className="py-2 text-right text-base font-semibold tabular-nums">
-                        {fmtNum(m.projected)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <Panel
+          title="Projected bookings by month"
+          action={
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() =>
+                  setSelectedMonth((k) => shiftMonthKey(k, -1))
+                }
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="w-32 text-center text-sm font-medium">
+                {monthLabel(selectedMonth)}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                disabled={selectedMonth >= currentMonthKey}
+                onClick={() => setSelectedMonth((k) => shiftMonthKey(k, 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
+          }
+        >
+          {monthProjection.isCurrent && (
+            <span className="mb-3 inline-block rounded-full bg-primary/15 px-2 py-0.5 text-[10px] text-primary">
+              in progress
+            </span>
           )}
+          <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
+            <div className="rounded-md bg-background/60 p-3">
+              <div className="text-xs text-muted-foreground">
+                Days elapsed
+              </div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">
+                {monthProjection.elapsedDays} / {monthProjection.totalDays}
+              </div>
+            </div>
+            <div className="rounded-md bg-background/60 p-3">
+              <div className="text-xs text-muted-foreground">
+                Booked so far
+              </div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">
+                {fmtNum(monthProjection.bookedSoFar)}
+              </div>
+            </div>
+            <div className="rounded-md bg-background/60 p-3">
+              <div className="text-xs text-muted-foreground">Daily rate</div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">
+                {monthProjection.dailyRate.toFixed(1)}/day
+              </div>
+            </div>
+            <div className="rounded-md bg-primary/10 p-3">
+              <div className="text-xs text-muted-foreground">
+                Projected total
+              </div>
+              <div className="mt-1 text-lg font-semibold tabular-nums text-primary">
+                {fmtNum(monthProjection.projected)}
+              </div>
+            </div>
+          </div>
         </Panel>
       </div>
 

@@ -18,3 +18,20 @@ export const sumBy = <T,>(rows: T[], get: (row: T) => number | null | undefined)
 // month0 is 0-indexed (January = 0), matching Date's convention.
 export const daysInMonth = (year: number, month0: number) =>
   new Date(year, month0 + 1, 0).getDate();
+
+// "YYYY-MM" helpers for the month selector/projection panel.
+export const monthKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+export const shiftMonthKey = (key: string, delta: number) => {
+  const [year, month] = key.split("-").map(Number);
+  return monthKey(new Date(year, month - 1 + delta, 1));
+};
+
+export const monthLabel = (key: string) => {
+  const [year, month] = key.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+};
