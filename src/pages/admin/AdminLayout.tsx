@@ -35,15 +35,13 @@ export default function AdminLayout() {
               </Link>
             );
           })}
-        </nav>
-        <div className="border-t border-sidebar-border p-3">
           <Link
             to="/"
             className="flex items-center gap-3 rounded-md px-3 py-2 text-sm transition hover:bg-sidebar-accent/60"
           >
             <ClipboardList className="h-4 w-4" /> EOD form
           </Link>
-        </div>
+        </nav>
       </aside>
       <main className="min-w-0 flex-1">
         <Outlet />
